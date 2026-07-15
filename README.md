@@ -1,157 +1,160 @@
 # maxcube-ha-fix
 
-Schnellere und zuverlässigere MAX! Cube-Anbindung für Home Assistant.
+Faster and more reliable MAX! Cube integration for Home Assistant.
+
+> 🇩🇪 [Deutsche Version](README_ger.md)
 
 ## Problem
 
-Die HA-Standard-`maxcube`-Integration pollt den Cube träge (Standard 300s) per close+reconnect:
-- Jeder Poll baut eine neue TCP-Verbindung auf und ab (lahm, fehleranfällig)
-- Der Cube erlaubt nur **eine** TCP-Verbindung → häufig Timeouts
-- Statusänderungen (Fenster auf/zu, Thermostat manuell verstellt) werden erst Minuten später erfasst
-- Es gibt keine permanente Verbindung für Push-Nachrichten
+The HA built-in `maxcube` integration polls the cube slowly (default 300s) using close+reconnect:
+- Every poll opens and closes a TCP connection (slow, error-prone)
+- The cube only allows **one** TCP connection → frequent timeouts
+- Status changes (window open/close, thermostat manually adjusted) take minutes to appear
+- No persistent connection for push messages
 
-## Lösung
+## Solution
 
-Das Repository enthält eine gepatchte `maxcube`-Bibliothek mit folgenden Änderungen:
+This repo provides a patched `maxcube` library with the following changes:
 
-| Änderung | Original | Patch |
+| Change | Original | Patched |
 |---|---|---|
-| **Verbindung** | close+reconnect bei jedem Poll | Dauerhafte TCP-Verbindung |
-| **RX-Thread** | Keiner | Hintergrundthread empfängt Push-Nachrichten sofort |
-| **Polling** | Nur initiale L-Nachricht beim Connect | Explizites `l:`-Kommando auf bestehender Verbindung |
-| **Fenstersensoren** | Nur aus L-Nachrichten | Auch aus C-Nachrichten (unsolicited config updates) |
-| **Close** | Socket einfach fallen lassen | Sendet `q:` für sauberen Verbindungsabbau |
+| **Connection** | close+reconnect on every poll | Persistent TCP connection |
+| **RX thread** | None | Background thread receives push messages instantly |
+| **Polling** | Only initial L message on connect | Explicit `l:` command on existing connection |
+| **Window sensors** | Only from L messages | Also from C messages (unsolicited config updates) |
+| **Close** | Socket dropped without notice | Sends `q:` for clean disconnect |
 | **Timeout** | 3s | 5s |
 
-**Effekt:** Fenster- und Thermostat-Änderungen werden innerhalb von Sekunden erfasst, nicht erst Minuten später.
+**Result:** Window and thermostat changes are detected within seconds, not minutes.
 
 ## Installation
 
 ```bash
-# 1. Repo klonen
+# 1. Clone repo
 git clone https://github.com/Kalrkloss/maxcube-ha-fix.git
 cd maxcube-ha-fix
 
-# 2. Auto-Installation (erkennt HA Core und HA Container)
+# 2. Auto-install (detects HA Core and HA Container)
 sudo bash install.sh
 
-# 3. Home Assistant neustarten
+# 3. Restart Home Assistant
 # Core: sudo systemctl restart homeassistant
 # Container: docker restart homeassistant
 ```
 
-### HA Core (manuelle Installation auf Debian/Ubuntu)
+### HA Core (manual install on Debian/Ubuntu)
 
 ```bash
-# maxcube-Pfad finden
+# Find maxcube path
 find /srv -path "*/maxcube/__init__.py" -not -path "*__pycache__*"
 
-# Dateien ersetzen (Beispiel Pfad)
+# Replace files (example path)
 cp maxcube/commander.py /srv/homeassistant312/lib/python3.12/site-packages/maxcube/
 cp maxcube/cube.py /srv/homeassistant312/lib/python3.12/site-packages/maxcube/
 
-# HA neustarten
+# Restart HA
 sudo systemctl restart homeassistant
 ```
 
 ### HA Container (Docker, HA OS, HA Blue/Yellow, Raspberry Pi)
 
 ```bash
-# Auto-Installation (erkennt Container automatisch)
+# Auto-install (detects containers automatically)
 sudo bash install.sh
 
-# Oder manuell:
+# Or manually:
 docker exec -it homeassistant find /usr -path "*/maxcube/cube.py"
-# Pfad merken, dann:
+# Note the path, then:
 docker cp maxcube/commander.py homeassistant:/usr/local/lib/python3.12/site-packages/maxcube/
 docker cp maxcube/cube.py homeassistant:/usr/local/lib/python3.12/site-packages/maxcube/
 docker restart homeassistant
 ```
 
-> **Hinweis:** Bei HA OS (Raspberry Pi Image) per `ssh` einloggen und dort `docker exec` ausführen.
-> Der Container heißt meist `homeassistant` oder `core-homeassistant`.
+> **Note:** On HA OS (Raspberry Pi image) log in via `ssh` and run `docker exec` from there.
+> The container is usually named `homeassistant` or `core-homeassistant`.
 
 ### HACS / Custom Component
 
-Der Patch ersetzt direkt die maxcube-Library im HA-venv (kein HACS-Custom-Component).
-Die Integration selbst (`homeassistant.components.maxcube`) bleibt unverändert.
+This patch replaces the maxcube library directly in the HA venv (not a HACS custom component).
+The HA integration itself (`homeassistant.components.maxcube`) is unchanged.
 
-## Home Assistant Konfiguration
+## Home Assistant Configuration
 
 `configuration.yaml`:
 
 ```yaml
 maxcube:
   gateways:
-    - host: 192.168.1.123       # IP deines MAX! Cube
-      port: 62910               # Standard-Port (optional)
-      scan_interval: 60         # Polling-Intervall in Sekunden
+    - host: 192.168.1.123       # Your MAX! Cube IP
+      port: 62910               # Default port (optional)
+      scan_interval: 30          # Poll interval in seconds
 ```
 
-Mit dem Patch kann `scan_interval` bedenkenlos auf 30-60s gesetzt werden, da keine
-reconnect-Last mehr anfällt und der Cube seine eine Verbindung dauerhaft hält.
+With this patch, `scan_interval` can safely be set to 30–60s since there's no reconnect
+overhead and the cube keeps its single connection permanently open.
 
-## Dateien
+## File Structure
 
 ```
 maxcube-ha-fix/
-├── README.md
-├── install.sh
+├── README.md          # This file
+├── README_ger.md      # German version
+├── install.sh         # Auto-install script
 └── maxcube/
-    ├── __init__.py       # unverändert
-    ├── buffer.py         # unverändert
-    ├── commander.py      # ** GEPATCHT **
-    ├── connection.py     # unverändert
-    ├── cube.py           # ** GEPATCHT **
-    ├── deadline.py       # unverändert
-    ├── device.py         # unverändert
-    ├── message.py        # unverändert
-    ├── room.py           # unverändert
-    ├── thermostat.py     # unverändert
-    ├── wallthermostat.py # unverändert
-    └── windowshutter.py  # unverändert
+    ├── __init__.py       # unchanged
+    ├── buffer.py         # unchanged
+    ├── commander.py      # ** PATCHED **
+    ├── connection.py     # unchanged
+    ├── cube.py           # ** PATCHED **
+    ├── deadline.py       # unchanged
+    ├── device.py         # unchanged
+    ├── message.py        # unchanged
+    ├── room.py           # unchanged
+    ├── thermostat.py     # unchanged
+    ├── wallthermostat.py # unchanged
+    └── windowshutter.py  # unchanged
 ```
 
-## Patches im Detail
+## Patches in Detail
 
 ### `commander.py`
 
-- **`update()`**: Verbindung bleibt permanent offen. Sendet `l:\r\n` auf bestehendem Socket
-  und wartet auf L-Antwort. Kein close+reconnect mehr.
-- **`__rx_loop()`**: Neuer Hintergrundthread. Liest permanent vom Socket (blockierend, 1s
-  Poll-Timeout) und verteilt Nachrichten. Erwartete Antworten gehen an den wartenden
-  `__call()`, der Rest in `__unsolicited_messages`.
-- **`__call()`**: Nutzt `threading.Event` statt direktem recv(). Sendet Nachricht, wartet
-  auf Event-Signal vom RX-Thread.
-- **`__close()`**: Sendet `q:` vor dem Socket-Close, damit der Cube die Verbindung sauber abbaut.
-- **`UPDATE_TIMEOUT`**: 3s → 5s für mehr Stabilität.
+- **`update()`**: Connection stays open permanently. Sends `l:\r\n` on the existing socket
+  and waits for the L response. No more close+reconnect.
+- **`__rx_loop()`**: New background thread. Continuously reads from the socket (blocking,
+  1s poll timeout) and dispatches messages. Expected replies go to the waiting `__call()`,
+  everything else into `__unsolicited_messages`.
+- **`__call()`**: Uses `threading.Event` instead of direct `recv()`. Sends message, waits
+  for event signal from the RX thread.
+- **`__close()`**: Sends `q:` before closing the socket so the cube cleans up the connection.
+- **`UPDATE_TIMEOUT`**: 3s → 5s for more stability.
 
 ### `cube.py`
 
-- **`parse_c_message()`**: Setzt jetzt auch `device.is_open` aus `data[5]`, nicht nur
-  `device.initialized`. Dadurch werden Fenster-Statusänderungen auch aus C-Nachrichten
-  (unsolicited config updates) erfasst.
+- **`parse_c_message()`**: Now also sets `device.is_open` from `data[5]`, not just
+  `device.initialized`. This means window status changes are picked up from C messages
+  (unsolicited config updates) as well.
 
-## Funktionsweise
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
 │  HA maxcube Integration                          │
 │                                                  │
-│  update() alle 60s                               │
-│    └→ sendet l: auf bestehender Verbindung        │
-│    └→ RX-Thread liefert Antwort                   │
+│  update() every scan_interval                    │
+│    └→ sends l: on existing connection             │
+│    └→ RX thread delivers response                 │
 │                                                  │
-│  RX-Thread (läuft permanent)                     │
-│    └→ recv() blockiert auf Socket                │
-│    └→ Push-Nachrichten sofort in __unsolicited   │
-│    └→ Erwartete Antworten → Event → __call()     │
+│  RX thread (runs permanently)                    │
+│    └→ recv() blocks on socket                    │
+│    └→ Push messages → __unsolicited instantly     │
+│    └→ Expected replies → Event → __call()         │
 │                                                  │
-│  TCP-Verbindung (eine, dauerhaft)                │
-│    └→ MAX! Cube Port 62910                       │
+│  TCP connection (single, persistent)             │
+│    └→ MAX! Cube port 62910                       │
 └─────────────────────────────────────────────────┘
 ```
 
-## Lizenz
+## License
 
-GPL v2 — wie die originale maxcube-Bibliothek.
+GPL v2 — same as the original maxcube library.
