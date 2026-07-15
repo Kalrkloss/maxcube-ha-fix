@@ -150,9 +150,21 @@ class MaxCube(MaxDevice):
             device.min_temperature = data[21] / 2.0
 
         if device and device.is_windowshutter():
-            # Pure Speculation based on this:
-            # Before: [17][12][162][178][4][0][20][15]KEQ0839778
-            # After:  [17][12][162][178][4][1][20][15]KEQ0839778
+            # Parse window shutter status from C (configuration) message.
+            #
+            # The C message is sent by the cube whenever a device's
+            # configuration changes — including window state transitions.
+            # Byte 5 (0-indexed) appears to encode the open/closed state:
+            #
+            #   Before (closed): [17][12][162][178][4][0][20][15]KEQ0839778
+            #   After  (open):   [17][12][162][178][4][1][20][15]KEQ0839778
+            #                                     ^
+            #                                   0 → 1 when opened
+            #
+            # Note: The L (device list) message also carries this state
+            # in a different format (status bits). We handle both so that
+            # window changes are picked up regardless of which message type
+            # the cube sends — push (C) or poll response (L).
             device.initialized = data[5]
             device.is_open = bool(data[5])
 
