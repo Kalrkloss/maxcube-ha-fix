@@ -29,17 +29,18 @@ Das Repository enthält eine gepatchte `maxcube`-Bibliothek mit folgenden Änder
 
 ```bash
 # 1. Repo klonen
-git clone https://github.com/<DEIN_USER>/maxcube-ha-fix.git
+git clone https://github.com/Kalrkloss/maxcube-ha-fix.git
 cd maxcube-ha-fix
 
-# 2. Installationsskript als root ausführen
+# 2. Auto-Installation (erkennt HA Core und HA Container)
 sudo bash install.sh
 
 # 3. Home Assistant neustarten
-sudo systemctl restart homeassistant
+# Core: sudo systemctl restart homeassistant
+# Container: docker restart homeassistant
 ```
 
-### Manuelle Installation
+### HA Core (manuelle Installation auf Debian/Ubuntu)
 
 ```bash
 # maxcube-Pfad finden
@@ -52,6 +53,23 @@ cp maxcube/cube.py /srv/homeassistant312/lib/python3.12/site-packages/maxcube/
 # HA neustarten
 sudo systemctl restart homeassistant
 ```
+
+### HA Container (Docker, HA OS, HA Blue/Yellow, Raspberry Pi)
+
+```bash
+# Auto-Installation (erkennt Container automatisch)
+sudo bash install.sh
+
+# Oder manuell:
+docker exec -it homeassistant find /usr -path "*/maxcube/cube.py"
+# Pfad merken, dann:
+docker cp maxcube/commander.py homeassistant:/usr/local/lib/python3.12/site-packages/maxcube/
+docker cp maxcube/cube.py homeassistant:/usr/local/lib/python3.12/site-packages/maxcube/
+docker restart homeassistant
+```
+
+> **Hinweis:** Bei HA OS (Raspberry Pi Image) per `ssh` einloggen und dort `docker exec` ausführen.
+> Der Container heißt meist `homeassistant` oder `core-homeassistant`.
 
 ### HACS / Custom Component
 
